@@ -1,16 +1,7 @@
 import { useState } from "react";
 import tracksData from "../tracks.json";
-
-import { db, auth } from "../firebase";
-import { doc, setDoc } from "firebase/firestore";
-
-// Call when user finishes bracket
-async function saveBracket() {
-  if (!auth.currentUser) return alert("Please log in");
-  const userId = auth.currentUser.uid;
-  await setDoc(doc(db, "brackets", userId), { round, matchups });
-  alert("Bracket saved!");
-}
+import { collection, addDoc } from "firebase/firestore";
+import { db } from "../firebase";
 
 function createMatchups(list) {
   const pairs = [];
@@ -25,6 +16,8 @@ export default function Bracket() {
 
   const [round, setRound] = useState(1);
   const [matchups, setMatchups] = useState(createMatchups(tracksData));
+  const [allRounds, setAllRounds] = useState([]); // store all rounds
+  const [finished, setFinished] = useState(false);
 
   function pickWinner(index, winner) {
     const newMatchups = [...matchups];
@@ -32,16 +25,34 @@ export default function Bracket() {
     setMatchups(newMatchups);
   }
 
-  function nextRound() {
+  async function nextRound() {
     const winners = matchups.map((m) => m.winner);
     if (winners.includes(null)) {
       alert("Please pick all winners!");
       return;
     }
+
+    // Save this round to allRounds
+    setAllRounds([...allRounds, winners]);
+
     if (winners.length === 1) {
       alert(`Bracket finished! Winner: ${winners[0]}`);
+      setFinished(true);
+
+      // Save bracket to Firebase
+      try {
+        await addDoc(collection(db, "brackets"), {
+          rounds: [...allRounds, winners],
+          timestamp: Date.now(),
+        });
+      } catch (err) {
+        console.error("Error saving bracket:", err);
+      }
+
       return;
     }
+
+    // Prepare next round matchups
     setMatchups(createMatchups(winners));
     setRound(round + 1);
   }
@@ -66,9 +77,21 @@ export default function Bracket() {
           </button>
         </div>
       ))}
-      <button onClick={nextRound} className="mt-4 p-3 bg-blue-600 text-white rounded">
-        Next Round
-      </button>
+
+      {!finished && (
+        <button onClick={nextRound} className="mt-4 p-3 bg-blue-600 text-white rounded">
+          Next Round
+        </button>
+      )}
+
+      {finished && (
+        <a
+          href="/results"
+          className="mt-4 inline-block px-6 py-3 bg-green-600 text-white rounded"
+        >
+          View All Results
+        </a>
+      )}
     </div>
   );
 }
